@@ -1,11 +1,11 @@
 #include <algorithm>
-#include <cmath>
 #include <iostream>
-#include <map>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
+#include <map>
+#include <cmath>
 
 using namespace std;
 
@@ -40,7 +40,6 @@ vector<string> SplitIntoWords(const string& text) {
     if (!word.empty()) {
         words.push_back(word);
     }
-
     return words;
 }
 
@@ -60,9 +59,9 @@ public:
     void AddDocument(int document_id, const string& document) {
         const vector<string> words = SplitIntoWordsNoStop(document);
         ++document_count_;
-        double tf = 1. / words.size();
+        double freq_word = 1. / words.size();
         for (const string& word: words) {
-            word_to_document_freqs_[word].insert({document_id, tf});
+            word_to_document_freqs_[word][document_id] += freq_word;
         }
     }
 
@@ -79,7 +78,7 @@ public:
         }
         return matched_documents;
     }
-
+    
 private:   
     struct Query {
         set<string> minus_words;
@@ -122,21 +121,25 @@ private:
         }
         return query_words;
     }
-
+    
+    double ColculationIdf(const int word_count) const{
+        return log(static_cast<double>(document_count_) / word_count);
+    }
+    
     vector<Document> FindAllDocuments(Query& query_words) const {
         vector<Document> matched_documents;
         map<int, double> document_to_relevance;
         for (const string& plus_word : query_words.plus_words) {
             if (word_to_document_freqs_.count(plus_word) != 0) {
-                double idf = log(static_cast<double>(document_count_) / word_to_document_freqs_.at(plus_word).size());
-                for (auto& [document_id, tf] : word_to_document_freqs_.at(plus_word)) {
-                    document_to_relevance[document_id] += tf * idf;
+                double idf = ColculationIdf(word_to_document_freqs_.at(plus_word).size());
+                for (auto& [document_id, freq_word] : word_to_document_freqs_.at(plus_word)) {
+                    document_to_relevance[document_id] += freq_word * idf;
                 }
             }                
         }
         for (const string& minus_word : query_words.minus_words) {
             if (word_to_document_freqs_.count(minus_word) != 0) {
-                for (auto& [document_id ,tf] : word_to_document_freqs_.at(minus_word)) {
+                for (auto& [document_id, freq_word] : word_to_document_freqs_.at(minus_word)) {
                     document_to_relevance.erase(document_id);
                 }
             }
