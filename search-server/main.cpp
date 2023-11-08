@@ -6,7 +6,7 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <optional>
+#include <numeric>
 
 using namespace std;
 
@@ -82,19 +82,13 @@ public:
     template <typename StringContainer>
     explicit SearchServer(const StringContainer& stop_words)
         : stop_words_(MakeUniqueNonEmptyStrings(stop_words)) {
-        for (const string& word : stop_words) {
-            if (!IsValidWord(word)) {
-                throw invalid_argument("Недопустимые символы "s);
-            }
+        if (none_of(stop_words.begin(), stop_words.end(), IsValidWord)) {
+            throw invalid_argument("Недопустимые символы "s);
         }
     }
 
     explicit SearchServer(const string& stop_words_text)
-        : SearchServer(
-            SplitIntoWords(stop_words_text)) { // Invoke delegating constructor from string container
-            if (!IsValidWord(stop_words_text)) {
-                throw invalid_argument("Недопустимые символы"s);
-            }
+        : SearchServer(SplitIntoWords(stop_words_text)) { // Invoke delegating constructor from string container
     }
 
     void AddDocument(int document_id, const string& document, DocumentStatus status, const vector<int>& ratings) {
@@ -117,29 +111,14 @@ public:
     template <typename DocumentPredicate>
     vector<Document> FindTopDocuments(const string& raw_query, DocumentPredicate document_predicate) const {
         const Query query = ParseQuery(raw_query);
-        for (const string& word : query.minus_words) {
-            if (!IsValidWord(word)) {
-                throw invalid_argument("Недопустимые символы"s);
-            } else if (word[0] == '-') {
-                throw invalid_argument("Более одного символа \"-\""s);
-            } else if (word.empty()) {
-                throw invalid_argument("Нет текста после символа \"-\""s);
-            }
-        }
-        for (const string& word : query.plus_words) {
-            if (!IsValidWord(word)) {
-                throw invalid_argument("Недопустимые символы"s);;
-            }
-        }
         vector<Document>result = FindAllDocuments(query, document_predicate);
         sort(result.begin(), result.end(),
-             [](const Document& lhs, const Document& rhs) {
-                 if (abs(lhs.relevance - rhs.relevance) < 1e-6) {
-                     return lhs.rating > rhs.rating;
-                 } else {
-                     return lhs.relevance > rhs.relevance;
-                 }
-             });
+            [](const Document& lhs, const Document& rhs) {
+                if (abs(lhs.relevance - rhs.relevance) < numeric_limits<double>::epsilon()) {
+                    return lhs.rating > rhs.rating;
+                }
+                return lhs.relevance > rhs.relevance;
+            });
         if (result.size() > MAX_RESULT_DOCUMENT_COUNT) {
             result.resize(MAX_RESULT_DOCUMENT_COUNT);
         }
@@ -163,20 +142,6 @@ public:
 
     tuple<vector<string>, DocumentStatus> MatchDocument(const string& raw_query, int document_id) const {
         const Query query = ParseQuery(raw_query);
-        for (const string& word : query.minus_words) {
-            if (!IsValidWord(word)) {
-                throw invalid_argument("Недопустимые символы"s);
-            } else if (word[0] == '-') {
-                throw invalid_argument("Более оного \"-\""s);
-            } else if (word.empty()) {
-                throw invalid_argument("Нет текста после символа \"-\""s);
-            }
-        }
-        for (const string& word : query.plus_words) {
-            if (!IsValidWord(word)) {
-                throw invalid_argument("Недопустимые символы"s);;
-            }
-        }
         vector<string> matched_words;
         for (const string& word : query.plus_words) {
             if (word_to_document_freqs_.count(word) == 0) {
@@ -212,7 +177,7 @@ private:
     map<int, DocumentData> documents_;
     vector<int> document_id_;
 
-    static bool IsValidWord(const string& word) {
+    static bool IsValidWord(const string& word){
         // A valid word must not contain special characters
         return none_of(word.begin(), word.end(), [](char c) {
             return c >= '\0' && c < ' ';
@@ -234,14 +199,10 @@ private:
     }
 
     static int ComputeAverageRating(const vector<int>& ratings) {
-        if (ratings.empty()) {
-            return 0;
-        }
-        int rating_sum = 0;
-        for (const int rating : ratings) {
-            rating_sum += rating;
-        }
-        return rating_sum / static_cast<int>(ratings.size());
+        if (ratings.empty()) { 
+            return 0; 
+        } 
+        return accumulate(ratings.begin(), ratings.end(), 0) / static_cast<int>(ratings.size());
     }
 
     struct QueryWord {
@@ -251,11 +212,19 @@ private:
     };
 
     QueryWord ParseQueryWord(string text) const {
+        if (!IsValidWord(text)) {
+            throw invalid_argument("Недопустимые символы "s);
+        }
         bool is_minus = false;
         // Word shouldn't be empty
         if (text[0] == '-') {
             is_minus = true;
             text = text.substr(1);
+        }
+        if (text[0] == '-') {
+            throw invalid_argument("Более одного символа \"-\""s);
+        } else if (text.empty()){
+            throw invalid_argument("Нет текста после символа \"-\""s);            
         }
         return {text, is_minus, IsStopWord(text)};
     }
@@ -350,11 +319,4 @@ int main() {
     } catch (const invalid_argument& e) {
         cout << "Ошибка: "s << e.what() << endl;
     }
-    try {
-        SearchServer search_server("и в на"s);
-        search_server.AddDocument(1, "пушистый кот пушистый хвост"s, DocumentStatus::ACTUAL, {7, 2, 7});
-        const auto documents = search_server.FindTopDocuments("--пушистый"s);
-    } catch (const invalid_argument& e) {
-        cout << "Ошибка: "s << e.what() << endl;
-    }   
 }
