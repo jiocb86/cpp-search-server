@@ -82,8 +82,8 @@ public:
     template <typename StringContainer>
     explicit SearchServer(const StringContainer& stop_words)
         : stop_words_(MakeUniqueNonEmptyStrings(stop_words)) {
-        if (none_of(stop_words.begin(), stop_words.end(), IsValidWord)) {
-            throw invalid_argument("Недопустимые символы "s);
+        if (!all_of(stop_words.begin(), stop_words.end(), IsValidWord)){
+            throw invalid_argument("Недопустимые символы"s);            
         }
     }
 
@@ -319,4 +319,11 @@ int main() {
     } catch (const invalid_argument& e) {
         cout << "Ошибка: "s << e.what() << endl;
     }
+    try {
+        SearchServer search_server("и в на"s);
+        search_server.AddDocument(1, "пушистый кот пушистый хвост"s, DocumentStatus::ACTUAL, {7, 2, 7});
+        const auto document = search_server.FindTopDocuments("пушистый--кот"s);
+    } catch (const invalid_argument& e) {
+        cout << "Ошибка: "s << e.what() << endl;
+    }    
 }
